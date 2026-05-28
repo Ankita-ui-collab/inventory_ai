@@ -33,7 +33,7 @@ def predict():
     img = cv2.imread(image_path)
 
     # Resize image
-    img = cv2.resize(img, (320, 320))
+    img = cv2.resize(img, (640, 640))
 
     # Normalize
     img = img.astype(np.float32) / 255.0
