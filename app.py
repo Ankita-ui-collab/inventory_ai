@@ -10,16 +10,11 @@ app = Flask(__name__)
 # Load ONNX model
 session = ort.InferenceSession("best.onnx")
 
-@app.route('/')
-
-def home():
-    return "ONNX AI Server Running"
-
+```python id="h6z2ms"
 @app.route('/predict', methods=['POST'])
 
 def predict():
 
-    # Check image upload
     if 'image' not in request.files:
         return jsonify({"error": "No image uploaded"})
 
@@ -32,29 +27,51 @@ def predict():
     # Read image
     img = cv2.imread(image_path)
 
-    # Resize image
-    img = cv2.resize(img, (640, 640))
+    # Resize
+    img_resized = cv2.resize(img, (640, 640))
 
     # Normalize
-    img = img.astype(np.float32) / 255.0
+    img_input = img_resized.astype(np.float32) / 255.0
 
-    # Change HWC → CHW
-    img = np.transpose(img, (2, 0, 1))
+    # HWC -> CHW
+    img_input = np.transpose(img_input, (2, 0, 1))
 
     # Add batch dimension
-    img = np.expand_dims(img, axis=0)
+    img_input = np.expand_dims(img_input, axis=0)
 
     # Run inference
-    outputs = session.run(None, {"images": img})
+    outputs = session.run(None, {"images": img_input})
+
+    output = outputs[0][0]
+
+    # Get highest confidence detection
+    scores = output[4:, :]
+
+    class_ids = np.argmax(scores, axis=0)
+
+    confidences = np.max(scores, axis=0)
+
+    best_idx = np.argmax(confidences)
+
+    best_class = int(class_ids[best_idx])
+
+    best_conf = float(confidences[best_idx])
+
+    # Replace with your dataset class names
+    class_names = [
+        "Arduino",
+        "Servo Motor",
+        "Relay",
+        "ESP32",
+        "DHT11"
+    ]
+
+    detected_component = class_names[best_class] if best_class < len(class_names) else "Unknown"
 
     os.remove(image_path)
 
     return jsonify({
-        "message": "Inference completed successfully",
-        "output_shape": str(np.array(outputs[0]).shape)
+        "component": detected_component,
+        "confidence": round(best_conf, 3)
     })
-
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
-
-
+```
