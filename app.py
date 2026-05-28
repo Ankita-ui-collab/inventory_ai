@@ -1,4 +1,4 @@
-```python
+
 from flask import Flask, request, jsonify
 import onnxruntime as ort
 import numpy as np
