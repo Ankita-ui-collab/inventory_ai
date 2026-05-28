@@ -77,13 +77,11 @@ class_names = [
 
 
 @app.route('/')
-
 def home():
     return "YOLOv8 ONNX Detection Server Running"
 
 
 @app.route('/predict', methods=['POST'])
-
 def predict():
 
     if 'image' not in request.files:
@@ -98,57 +96,70 @@ def predict():
     # Read image
     img = cv2.imread(image_path)
 
-    original = img.copy()
+    if img is None:
+        return jsonify({"error": "Invalid image"})
 
-    height, width = img.shape[:2]
+    original_h, original_w = img.shape[:2]
 
-    # Resize to YOLO input
-    img = cv2.resize(img, (640, 640))
+    # Resize
+    img_resized = cv2.resize(img, (640, 640))
 
     # Normalize
-    img = img.astype(np.float32) / 255.0
+    img_input = img_resized.astype(np.float32) / 255.0
 
     # HWC -> CHW
-    img = np.transpose(img, (2, 0, 1))
+    img_input = np.transpose(img_input, (2, 0, 1))
 
     # Add batch dimension
-    img = np.expand_dims(img, axis=0)
+    img_input = np.expand_dims(img_input, axis=0)
 
     # Run inference
-    outputs = session.run(None, {"images": img})
+    outputs = session.run(None, {"images": img_input})
 
     predictions = outputs[0][0]
+
+    # Convert shape (65,8400) -> (8400,65)
+    predictions = predictions.T
 
     boxes = []
     confidences = []
     class_ids = []
 
-    for i in range(predictions.shape[1]):
+    all_scores = []
 
-        row = predictions[:, i]
+    # Collect confidence scores
+    for row in predictions:
 
-        objectness = row[4]
-
-        if objectness < 0.04:
-            continue
-
-        class_scores = row[5:]
+        class_scores = row[4:]
 
         class_id = np.argmax(class_scores)
 
         confidence = class_scores[class_id]
 
-        if confidence < 0.04:
+        all_scores.append(float(confidence))
+
+    # Dynamic threshold
+    dynamic_threshold = max(np.mean(all_scores) * 1.5, 0.15)
+
+    # Detection filtering
+    for row in predictions:
+
+        class_scores = row[4:]
+
+        class_id = np.argmax(class_scores)
+
+        confidence = class_scores[class_id]
+
+        if confidence < dynamic_threshold:
             continue
 
-        # Bounding box
         x, y, w, h = row[0:4]
 
-        left = int((x - w / 2) * width / 640)
-        top = int((y - h / 2) * height / 640)
+        left = int((x - w / 2) * original_w / 640)
+        top = int((y - h / 2) * original_h / 640)
 
-        width_box = int(w * width / 640)
-        height_box = int(h * height / 640)
+        width_box = int(w * original_w / 640)
+        height_box = int(h * original_h / 640)
 
         boxes.append([left, top, width_box, height_box])
 
@@ -160,7 +171,7 @@ def predict():
     indexes = cv2.dnn.NMSBoxes(
         boxes,
         confidences,
-        score_threshold=0.04,
+        score_threshold=dynamic_threshold,
         nms_threshold=0.45
     )
 
@@ -179,11 +190,34 @@ def predict():
                 "confidence": round(conf, 3)
             })
 
-    os.remove(image_path)
+    # Fallback prediction if no box survives
+    if len(results) == 0:
+
+        best_idx = np.argmax(all_scores)
+
+        best_row = predictions[best_idx]
+
+        best_scores = best_row[4:]
+
+        best_class = np.argmax(best_scores)
+
+        best_conf = np.max(best_scores)
+
+        results.append({
+            "component": class_names[best_class],
+            "confidence": round(float(best_conf), 3),
+            "fallback_prediction": True
+        })
+
+    # Delete temp image
+    if os.path.exists(image_path):
+        os.remove(image_path)
 
     return jsonify(results)
 
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
+
+
 
