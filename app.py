@@ -10,7 +10,7 @@ app = Flask(__name__)
 # Load ONNX model
 session = ort.InferenceSession("best.onnx")
 
-```python id="h6z2ms"
+
 @app.route('/predict', methods=['POST'])
 
 def predict():
@@ -74,4 +74,4 @@ def predict():
         "component": detected_component,
         "confidence": round(best_conf, 3)
     })
-```
+
