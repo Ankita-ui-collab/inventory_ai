@@ -1,4 +1,5 @@
 
+```python id="t6v2qf"
 from flask import Flask, request, jsonify
 import onnxruntime as ort
 import numpy as np
@@ -118,84 +119,66 @@ def predict():
 
     predictions = outputs[0][0]
 
-    # Convert shape (65,8400) -> (8400,65)
+    # Convert (65,8400) -> (8400,65)
     predictions = predictions.T
-
-    boxes = []
-    confidences = []
-    class_ids = []
-
-    all_scores = []
-
-    # Collect confidence scores
-    for row in predictions:
-
-        class_scores = row[4:]
-
-        class_id = np.argmax(class_scores)
-
-        confidence = class_scores[class_id]
-
-        all_scores.append(float(confidence))
-
-    # Dynamic threshold
-    dynamic_threshold = max(np.mean(all_scores) * 1.5, 0.15)
-
-    # Detection filtering
-    for row in predictions:
-
-        class_scores = row[4:]
-
-        class_id = np.argmax(class_scores)
-
-        confidence = class_scores[class_id]
-
-        if confidence < dynamic_threshold:
-            continue
-
-        x, y, w, h = row[0:4]
-
-        left = int((x - w / 2) * original_w / 640)
-        top = int((y - h / 2) * original_h / 640)
-
-        width_box = int(w * original_w / 640)
-        height_box = int(h * original_h / 640)
-
-        boxes.append([left, top, width_box, height_box])
-
-        confidences.append(float(confidence))
-
-        class_ids.append(class_id)
-
-    # Apply NMS
-    indexes = cv2.dnn.NMSBoxes(
-        boxes,
-        confidences,
-        score_threshold=dynamic_threshold,
-        nms_threshold=0.45
-    )
 
     results = []
 
-    if len(indexes) > 0:
+    # Collect all predictions
+    all_predictions = []
 
-        for i in indexes.flatten():
+    for row in predictions:
 
-            detected_class = class_names[class_ids[i]]
+        class_scores = row[4:]
 
-            conf = confidences[i]
+        class_id = np.argmax(class_scores)
 
-            results.append({
-                "component": detected_class,
-                "confidence": round(conf, 3)
+        confidence = float(class_scores[class_id])
+
+        # Skip extremely weak detections
+        if confidence < 0.10:
+            continue
+
+        detected_class = class_names[class_id]
+
+        all_predictions.append({
+            "component": detected_class,
+            "confidence": confidence
+        })
+
+    # Sort by confidence
+    all_predictions = sorted(
+        all_predictions,
+        key=lambda x: x["confidence"],
+        reverse=True
+    )
+
+    # Remove duplicates
+    seen = set()
+
+    top_predictions = []
+
+    for pred in all_predictions:
+
+        component = pred["component"]
+
+        if component not in seen:
+
+            seen.add(component)
+
+            top_predictions.append({
+                "component": component,
+                "confidence": round(pred["confidence"], 3)
             })
 
-    # Fallback prediction if no box survives
-    if len(results) == 0:
+        # Keep top 3 only
+        if len(top_predictions) == 3:
+            break
 
-        best_idx = np.argmax(all_scores)
+    # Fallback if nothing detected
+    if len(top_predictions) == 0:
 
-        best_row = predictions[best_idx]
+        best_row = predictions[0]
 
         best_scores = best_row[4:]
 
@@ -203,21 +186,19 @@ def predict():
 
         best_conf = np.max(best_scores)
 
-        results.append({
+        top_predictions.append({
             "component": class_names[best_class],
             "confidence": round(float(best_conf), 3),
             "fallback_prediction": True
         })
 
-    # Delete temp image
+    # Cleanup
     if os.path.exists(image_path):
         os.remove(image_path)
 
-    return jsonify(results)
+    return jsonify(top_predictions)
 
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
-
-
-
+```
