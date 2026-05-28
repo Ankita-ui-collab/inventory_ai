@@ -1,5 +1,4 @@
 
-```python id="t6v2qf"
 from flask import Flask, request, jsonify
 import onnxruntime as ort
 import numpy as np
@@ -201,4 +200,4 @@ def predict():
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
-```
+
