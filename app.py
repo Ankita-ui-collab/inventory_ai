@@ -129,7 +129,7 @@ def predict():
 
         objectness = row[4]
 
-        if objectness < 0.1:
+        if objectness < 0.01:
             continue
 
         class_scores = row[5:]
@@ -138,7 +138,7 @@ def predict():
 
         confidence = class_scores[class_id]
 
-        if confidence < 0.1:
+        if confidence < 0.01:
             continue
 
         # Bounding box
@@ -160,7 +160,7 @@ def predict():
     indexes = cv2.dnn.NMSBoxes(
         boxes,
         confidences,
-        score_threshold=0.1,
+        score_threshold=0.01,
         nms_threshold=0.45
     )
 
