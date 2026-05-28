@@ -1,20 +1,25 @@
+```python
 from flask import Flask, request, jsonify
-from ultralytics import YOLO
+import onnxruntime as ort
+import numpy as np
+import cv2
 import os
 
 app = Flask(__name__)
 
-model = YOLO("best.pt")
+# Load ONNX model
+session = ort.InferenceSession("best.onnx")
 
 @app.route('/')
 
 def home():
-    return "AI Inventory Server Running"
+    return "ONNX AI Server Running"
 
 @app.route('/predict', methods=['POST'])
 
 def predict():
 
+    # Check image upload
     if 'image' not in request.files:
         return jsonify({"error": "No image uploaded"})
 
@@ -24,28 +29,32 @@ def predict():
 
     image.save(image_path)
 
-    results = model(image_path)
+    # Read image
+    img = cv2.imread(image_path)
 
-    detections = []
+    # Resize image
+    img = cv2.resize(img, (320, 320))
 
-    for r in results:
+    # Normalize
+    img = img.astype(np.float32) / 255.0
 
-        for box in r.boxes:
+    # Change HWC → CHW
+    img = np.transpose(img, (2, 0, 1))
 
-            cls = int(box.cls[0])
+    # Add batch dimension
+    img = np.expand_dims(img, axis=0)
 
-            confidence = float(box.conf[0])
-
-            label = model.names[cls]
-
-            detections.append({
-                "component": label,
-                "confidence": confidence
-            })
+    # Run inference
+    outputs = session.run(None, {"images": img})
 
     os.remove(image_path)
 
-    return jsonify(detections)
+    return jsonify({
+        "message": "Inference completed successfully",
+        "output_shape": str(np.array(outputs[0]).shape)
+    })
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
+```
+
