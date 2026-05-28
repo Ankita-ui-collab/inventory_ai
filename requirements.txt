@@ -1,8 +1,7 @@
 flask
-ultralytics
+onnxruntime
 opencv-python-headless
-torch
-torchvision
 numpy
 pillow
 gunicorn
+
